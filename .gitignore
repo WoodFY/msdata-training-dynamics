@@ -171,3 +171,10 @@ cython_debug/
 .pypirc
 
 *.png
+*.svg
+*.csv
+*.npz
+*.mzML
+*.mzXML
+*.pth
+*.pkl
