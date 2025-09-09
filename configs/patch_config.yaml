@@ -8,7 +8,7 @@ DAPS:  # Density-Aware Peaks Selection
   patch_height: 224
   patch_width: 224
   window_size: 100
-  intensity_percentile: 10
-  density_percentile: 90
+  intensity_threshold: 0.1
+  density_threshold: 40
   min_peaks_in_patch: 10
   padding_value: 0.0
