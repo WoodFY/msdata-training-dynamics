@@ -23,8 +23,6 @@ from datasets.datasets import MSIMGDataset
 from models.resnet_2d import build_resnet_2d
 from models.densenet_2d import build_densenet_2d
 from models.efficientnet_2d import build_efficientnet_2d
-from models.swin_transformer import build_swin_transformer
-from models.hierarchically_guided_swin_transformer import build_hierarchically_guided_swin_transformer
 from callbacks.early_stopping import EarlyStopping
 from utils.data_loader import load_ms_img_dataset
 from utils.train_utils import train, test
@@ -40,8 +38,6 @@ def set_seeds(seed):
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
 
 
 def load_params_from_yaml(file_path, key=None):
@@ -237,20 +233,6 @@ def run_experiment(args):
         elif 'EfficientNet' in args.model_name:
             model = build_efficientnet_2d(args)
             return_positions = False
-        elif 'Swin' in args.model_name:
-            if 'HG' in args.model_name:
-                model = build_hierarchically_guided_swin_transformer(args)
-            else:
-                model = build_swin_transformer(args)
-                if args.pretrained:
-                    pretrained_model_path = os.path.join(args.root_dir, args.pretrained_model_path_dict.get(args.model_name))
-                    model = load_pretrained_for_finetune(
-                        model=model,
-                        pretrained_model_path=pretrained_model_path,
-                        exclude_layers=['patch_embed', 'head'],
-                        freeze=False
-                    )
-            return_positions = False
 
         if args.multi_gpu and torch.cuda.device_count() > 1:
             print(f'Using {torch.cuda.device_count()} GPUs for training.')
@@ -264,8 +246,8 @@ def run_experiment(args):
         class_weights = torch.tensor(class_weights, dtype=torch.float32, device=args.device)
         criterion = nn.CrossEntropyLoss(weight=class_weights)
         # criterion = nn.CrossEntropyLoss()
-        optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-5)
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=2, min_lr=1e-32)
+        optimizer = optim.Adam(model.parameters(), lr=1e-4, weight_decay=1e-5)
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5)
 
         if args.early_stopping:
             early_stopping = EarlyStopping(patience=args.patience)
@@ -281,7 +263,6 @@ def run_experiment(args):
                 transform=get_augmentation_pipeline()
             ),
             batch_size=args.batch_size,
-            num_workers=args.num_workers,
             shuffle=True,
             pin_memory=True
         )
@@ -294,7 +275,6 @@ def run_experiment(args):
                 transform=None
             ),
             batch_size=args.batch_size,
-            num_workers=args.num_workers,
             shuffle=False,
             pin_memory=True
         )
@@ -307,7 +287,6 @@ def run_experiment(args):
                 transform=None
             ),
             batch_size=args.batch_size,
-            num_workers=args.num_workers,
             shuffle=False,
             pin_memory=True
         )
@@ -385,12 +364,11 @@ def main():
     parser.add_argument('--score_strategy', type=str, default='Entropy', choices=['Entropy', 'Mean'], help='Strategy to calculate patch scores (e.g. Entropy: 1D image entropy, Mean: mean intensity)')
     parser.add_argument('--num_patches', type=int, default=256, help='Number of patches to be selected')
 
-    parser.add_argument('--k_folds', type=int, default=6, help='Number of patches to be selected')
+    parser.add_argument('--k_folds', type=int, default=5, help='Number of patches to be selected')
     parser.add_argument('--batch_size', type=int, default=8, help='Batch size')
     parser.add_argument('--epochs', type=int, default=64, help='Number of epochs')
     parser.add_argument('--device', type=str, default='cuda', help='Device to use')
     parser.add_argument('--num_workers', type=int, default=4, help='Number of workers for DataLoader')
-    parser.add_argument('--pretrained', action='store_true', help='Use pretrained model')
     parser.add_argument('--multi_gpu', action='store_true', help='Use multiple GPUs')
     parser.add_argument('--early_stopping', action='store_true', help='Use early stopping')
     parser.add_argument('--patience', type=int, default=10, help='Early stopping patience')
@@ -424,9 +402,10 @@ def main():
         args.patch_prefix = (f"{args.patch_strategy}_PATCH_{patch_params.get('patch_height')}x{patch_params.get('patch_width')}_"
                              f"OVERLAP_{patch_params.get('overlap_row')}x{patch_params.get('overlap_col')}")
     elif args.patch_strategy == 'DAPS':
-        args.patch_prefix = (f"{args.patch_strategy}_PATCH_{patch_params.get('patch_height')}x{patch_params.get('patch_width')}_"
-                             f"WINDOW_{args.patch_params.get('window_size')}_INT_PER_{args.patch_params.get('intensity_percentile')}_"
-                             f"DENS_PER_{args.patch_params.get('density_percentile')}_MIN_PKS_{args.patch_params.get('min_peaks_in_patch')}")
+        args.patch_prefix = (
+            f"{args.patch_strategy}_PATCH_{patch_params.get('patch_height')}x{patch_params.get('patch_width')}_"
+            f"WINDOW_{args.patch_params.get('window_size')}_INT_THR_{args.patch_params.get('intensity_threshold')}_"
+            f"DENS_THR_{args.patch_params.get('density_threshold')}_MIN_PKS_{args.patch_params.get('min_peaks_in_patch')}")
     else:
         raise ValueError(f"Invalid patch strategy: {args.patch_strategy}.")
 
@@ -434,8 +413,7 @@ def main():
 
     dataset_dict = {
         'SPNS': f"datasets/SPNS/",
-        'RCC': f"datasets/RCC/Positive/",
-        'CD': f"datasets/CD/",
+        'CD': f"datasets/CD/"
     }
     dataset_dir = os.path.join(args.root_dir, dataset_dict[args.dataset_name])
     if not os.path.exists(dataset_dir):

@@ -3,7 +3,6 @@ import torch.nn as nn
 from torchvision import transforms as T
 
 import random
-import numpy as np
 
 
 class RandomIntensityScale:

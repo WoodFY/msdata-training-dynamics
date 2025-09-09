@@ -39,8 +39,6 @@ def set_seeds(seed):
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
 
 
 def load_params_from_yaml(file_path, key=None):
@@ -84,8 +82,8 @@ def run_experiment(args):
     X_train, y_train = load_ms_dataset(dataset=train_set, label_mapping=args.label_mapping, mz_min=args.mz_min, mz_max=args.mz_max, bin_size=args.bin_size)
     X_test, y_test = load_ms_dataset(dataset=test_set, label_mapping=args.label_mapping, mz_min=args.mz_min, mz_max=args.mz_max, bin_size=args.bin_size)
 
-    exp_dir_name = (f"{args.model_name}_{args.dataset_name}_num_classes_{args.num_classes}_"
-                    f"in_channels_{args.in_channels}_spectrum_dim_{args.spectrum_dim}_batch_size_{args.batch_size}")
+    exp_dir_name = (f"{args.model_name}_{args.dataset_name}_NUM_BINS_{args.num_bins}_"
+                    f"NUM_CLASSES_{args.num_classes}_BATCH_SIZE_{args.batch_size}")
     print(exp_dir_name)
     exp_base_dir = os.path.join(args.save_dir, exp_dir_name)
 
@@ -97,7 +95,7 @@ def run_experiment(args):
 
     for fold_idx, (train_fold_indices, valid_fold_indices) in enumerate(skf.split(X_train, y_train)):
         print(f"{args.model_name} Fold {fold_idx + 1}/{args.k_folds}")
-        exp_model_name = f"kfold_{fold_idx + 1}_{args.model_name}_{args.dataset_name}_num_classes_{args.num_classes}"
+        exp_model_name = f"FOLD_{fold_idx + 1}_{args.model_name}_{args.dataset_name}_NUM_CLASSES_{args.num_classes}"
 
         X_train_fold, y_train_fold = X_train[train_fold_indices], y_train[train_fold_indices]
         X_valid_fold, y_valid_fold = X_train[valid_fold_indices], y_train[valid_fold_indices]
@@ -164,7 +162,7 @@ def run_experiment(args):
             criterion = nn.CrossEntropyLoss(weight=class_weights)
             # criterion = nn.CrossEntropyLoss()
             optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-5)
-            scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, min_lr=1e-32)
+            scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5)
 
             if args.early_stopping:
                 early_stopping = EarlyStopping(patience=args.patience)
@@ -234,16 +232,13 @@ def run_experiment(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Mass Spectra 2D Image')
+    parser = argparse.ArgumentParser(description='Mass Spectra 1D Peak List Classification Experiment')
     parser.add_argument('--root_dir', type=str, default='../', help='Root directory')
     parser.add_argument('--save_dir', type=str, default='checkpoints', help='Directory to save checkpoints')
     parser.add_argument('--model_name', type=str, default='ResNet50', help='Model name')
-    parser.add_argument('--dataset_name', type=str, required=True, help='List of datasets to use (e.g. ST000923-C8-pos ST000923-C18-neg)')
-    # model
-    parser.add_argument('--in_channels', type=int, default=1, help='Number of input channels')
-    # parser.add_argument('--spectrum_dim', type=int, help='Spectrum dimension')
-    # training
-    parser.add_argument('--k_folds', type=int, default=6, help='Number of patches to be selected')
+    parser.add_argument('--dataset_name', type=str, required=True, help='List of datasets to use')
+
+    parser.add_argument('--k_folds', type=int, default=5, help='Number of patches to be selected')
     parser.add_argument('--batch_size', type=int, default=8, help='Batch size')
     parser.add_argument('--epochs', type=int, default=64, help='Number of epochs')
     parser.add_argument('--device', type=str, default=None, help='Device to use')
@@ -269,23 +264,23 @@ def main():
     args.save_dir = save_dir
 
     dataset_dict = {
-        'SPNS': f"datasets/SPNS/Quantitative Table",
-        'RCC': f"datasets/RCC/Positive/Quantitative Table",
-        'CD': f"datasets/CD/Quantitative Table"
+        'SPNS': f"datasets/SPNS/PEAK_LIST",
+        'RCC': f"datasets/RCC/Positive/PEAK_LIST",
+        'CD': f"datasets/CD/PEAK_LIST"
     }
     dataset_dir = os.path.join(args.root_dir, dataset_dict[args.dataset_name])
     if not os.path.exists(dataset_dir):
         raise FileNotFoundError(f"Dataset directory {dataset_dir} does not exist.")
     args.dataset_dir = dataset_dir
-
+    args.in_channels = 1
     dataset_params = load_params_from_yaml('../configs/dataset_config.yaml', key=args.dataset_name)
     args.mz_min = dataset_params.get('mz_min')
     args.mz_max = dataset_params.get('mz_max')
     args.bin_size = dataset_params.get('bin_size')
+    args.num_bins = math.ceil((args.mz_max - args.mz_min) / args.bin_size)
     label_mapping = dataset_params.get('label_mapping')
     args.label_mapping = label_mapping
     args.num_classes = len(label_mapping)
-    args.spectrum_dim = math.ceil((args.mz_max - args.mz_min) / args.bin_size)
 
     run_experiment(args)
 

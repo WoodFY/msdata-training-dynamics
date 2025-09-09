@@ -6,7 +6,7 @@ from pathlib import Path
 from functools import partial
 from multiprocessing import Pool
 
-from utils.score_patches import calculate_patches_scores, parallel_calculate_patches_scores, calculate_average_scores
+from utils.score_patches import parallel_calculate_patches_scores, calculate_average_scores
 
 
 def _create_save_path(file_path, prefix):
@@ -125,7 +125,7 @@ def process_patch_selection(args, patched_dataset_dir, patched_file_paths):
         global_sorted_indices_file_path = os.path.join(
             patched_dataset_dir,
             f"{args.patch_strategy}_PATCH_{args.patch_params.get('patch_height')}x{args.patch_params.get('patch_width')}_"
-            f"MIN_PKS_{args.patch_params.get('min_peaks_in_patch')}_BIN_SIZE_{args.dataset_params.get('bin_size')}_RT_SCAN_{args.dataset_params.get('rt_scan')}_"
+            f"MIN_PKS_{args.patch_params.get('min_peaks_in_patch')}_BIN_SIZE_{args.dataset_params.get('bin_size')}_"
             f"Global_{args.score_strategy}_Indices.pkl"
         )
     else:

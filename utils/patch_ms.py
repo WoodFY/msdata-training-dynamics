@@ -150,24 +150,17 @@ def get_peaks(binned_file_path, patch_params):
         sparse_ms_matrix = binned_data['sparse_ms_matrix'].item()
         ms_matrix = sparse_ms_matrix.toarray()
         normalized_ms_matrix = get_normalized_matrix(ms_matrix)
-        adaptive_intensity_threshold = calculate_adaptive_threshold(
-            matrix=normalized_ms_matrix,
-            percentile=patch_params.get('adaptive_intensity_percentile', 10)
-        )
+
         density_map = calculate_density_map(
             normalized_matrix=normalized_ms_matrix,
             window_size=patch_params.get('window_size'),
-            intensity_threshold=adaptive_intensity_threshold
-        )
-        adaptive_density_threshold = calculate_adaptive_threshold(
-            matrix=density_map,
-            percentile=patch_params.get('adaptive_density_percentile', 90)
+            intensity_threshold=patch_params.get('intensity_threshold')
         )
         peaks = non_maximum_suppression(
             density_map=density_map,
             num_patches=patch_params.get('num_patches', 256),
             suppression_window_size=(patch_params.get('patch_height'), patch_params.get('patch_width')),
-            density_threshold=adaptive_density_threshold
+            density_threshold=patch_params.get('density_threshold')
         )
         return peaks
     except Exception as e:
@@ -419,11 +412,17 @@ def process_patching(args, binned_dataset_dir, binned_file_paths):
             workers=args.num_workers
         )
     elif args.patch_strategy == 'DAPS':
+        # selected_peaks_file_path = os.path.join(
+        #     binned_dataset_dir,
+        #     f"PATCH_{args.patch_params.get('patch_height')}x{args.patch_params.get('patch_width')}_"
+        #     f"WINDOW_{args.patch_params.get('window_size')}_INT_PER_{args.patch_params.get('intensity_percentile')}_"
+        #     f"DENS_PER_{args.patch_params.get('density_percentile')}_MIN_PKS_{args.patch_params.get('min_peaks_in_patch')}.pkl"
+        # )
         selected_peaks_file_path = os.path.join(
             binned_dataset_dir,
             f"PATCH_{args.patch_params.get('patch_height')}x{args.patch_params.get('patch_width')}_"
-            f"WINDOW_{args.patch_params.get('window_size')}_INT_PER_{args.patch_params.get('intensity_percentile')}_"
-            f"DENS_PER_{args.patch_params.get('density_percentile')}_MIN_PKS_{args.patch_params.get('min_peaks_in_patch')}.pkl"
+            f"WINDOW_{args.patch_params.get('window_size')}_INT_THR_{args.patch_params.get('intensity_threshold')}_"
+            f"DENS_THR_{args.patch_params.get('density_threshold')}_MIN_PKS_{args.patch_params.get('min_peaks_in_patch')}.pkl"
         )
 
         if os.path.exists(selected_peaks_file_path):
