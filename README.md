@@ -89,14 +89,14 @@ To run the traditional peak-list-based baseline experiments, you first need to g
 
 **Generating Peak Lists:**
 
-  - **For aligned peak lists**, use the `--align` flag:
+  - **For alignment peak lists**, use the `--align` flag:
     ```bash
     python mzmine_batch_process.py \
         --input_dir "input_dir" \
         --output_dir "output_dir" \
         --align
     ```
-  - **For non-aligned peak lists**, run the command without the `--align` flag:
+  - **For non-alignment peak lists**, run the command without the `--align` flag:
     ```bash
     python mzmine_batch_process.py \
         --input_dir "input_dir" \
