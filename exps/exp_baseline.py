@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from selenium.webdriver.support.expected_conditions import element_selection_state_to_be
 from torch.utils.data import DataLoader
 
 import os
@@ -9,12 +10,14 @@ import yaml
 import numpy as np
 import pandas as pd
 import argparse
+from pathlib import Path
 from datetime import datetime
 from sklearn.model_selection import StratifiedKFold
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
 from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from xgboost import XGBClassifier
+from sklearn.decomposition import PCA
 from sklearn.utils.class_weight import compute_class_weight
 
 from utils.file_utils import get_file_paths_grouped_by_class
@@ -65,25 +68,75 @@ def load_params_from_yaml(file_path, key=None):
         return params
 
 
+def get_file_paths(base_dir, suffix):
+    file_paths = []
+    for f in Path(base_dir).glob(f'*{suffix}'):
+        class_name = f.name.replace(suffix, '')
+        file_paths.append({'file_path': str(f), 'class_name': class_name})
+    return file_paths
+
+
 def _create_dataset(X, y, transform=False):
     return MSDataset(X=X, y=y, transform=transform)
 
 
 def run_experiment(args):
     set_seeds(args.random_seed)
-    print(f"Dataset directory: {args.dataset_dir}")
-    file_paths_by_class = get_file_paths_grouped_by_class(base_dir=args.dataset_dir, suffix='.csv')
-    train_set, test_set = split_dataset_files_by_class_stratified(
-        file_paths_by_class=file_paths_by_class,
-        train_size=0.8,
-        test_size=0.2,
-        random_seed=args.random_seed
-    )
-    X_train, y_train = load_ms_dataset(dataset=train_set, label_mapping=args.label_mapping, mz_min=args.mz_min, mz_max=args.mz_max, bin_size=args.bin_size)
-    X_test, y_test = load_ms_dataset(dataset=test_set, label_mapping=args.label_mapping, mz_min=args.mz_min, mz_max=args.mz_max, bin_size=args.bin_size)
+
+    if args.align:
+        dataset_dir = args.dataset_dir + '/Aligned'
+        print(f"Dataset directory: {dataset_dir}")
+        file_paths = get_file_paths(base_dir=dataset_dir, suffix='_aligned_feature_list.csv')
+        if not file_paths:
+            raise FileNotFoundError(f"No aligned CSV files found in the directory {args.dataset_dir}.")
+
+        X, y = load_ms_dataset(
+            dataset=file_paths,
+            label_mapping=args.label_mapping,
+            mz_min=args.mz_min,
+            mz_max=args.mz_max,
+            bin_size=args.bin_size,
+            align=args.align
+        )
+
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y,
+            train_size=0.8,
+            test_size=0.2,
+            random_state=args.random_seed,
+            stratify=y
+        )
+    else:
+        dataset_dir = args.dataset_dir + '/Not-Aligned'
+        print(f"Dataset directory: {dataset_dir}")
+        file_paths_by_class = get_file_paths_grouped_by_class(base_dir=dataset_dir, suffix='.csv')
+        train_set, test_set = split_dataset_files_by_class_stratified(
+            file_paths_by_class=file_paths_by_class,
+            train_size=0.8,
+            test_size=0.2,
+            random_seed=args.random_seed
+        )
+        X_train, y_train = load_ms_dataset(dataset=train_set, label_mapping=args.label_mapping, mz_min=args.mz_min, mz_max=args.mz_max, bin_size=args.bin_size)
+        X_test, y_test = load_ms_dataset(dataset=test_set, label_mapping=args.label_mapping, mz_min=args.mz_min, mz_max=args.mz_max, bin_size=args.bin_size)
+
+    if args.use_pca:
+        print(f"Applying PCA, retaining {args.pca_variance * 100}% of variance...")
+        pca = PCA(n_components=args.pca_variance)
+
+        X_train = pca.fit_transform(X_train)
+        X_test = pca.transform(X_test)
+
+        print(f"PCA applied. Data transformedd to {pca.n_components_} dimensions.")
+        print(f"Total explained variance: {sum(pca.explained_variance_ratio_) * 100:.2f}%")
 
     exp_dir_name = (f"{args.model_name}_{args.dataset_name}_NUM_BINS_{args.num_bins}_"
                     f"NUM_CLASSES_{args.num_classes}_BATCH_SIZE_{args.batch_size}")
+    if args.align:
+        exp_dir_name = (f"{args.model_name}_{args.dataset_name}_Aligned_NUM_BINS_{args.num_bins}_"
+                        f"NUM_CLASSES_{args.num_classes}_BATCH_SIZE_{args.batch_size}")
+    if args.use_pca:
+        exp_dir_name = (f"{args.model_name}_{args.dataset_name}_PCA_NUM_BINS_{args.num_bins}_"
+                        f"NUM_CLASSES_{args.num_classes}_BATCH_SIZE_{args.batch_size}")
     print(exp_dir_name)
     exp_base_dir = os.path.join(args.save_dir, exp_dir_name)
 
@@ -120,15 +173,13 @@ def run_experiment(args):
         )
 
         model = None
-        if args.model_name in ['RF', 'SVM', 'LDA', 'XGBoost']:
+        if args.model_name in ['RF', 'SVM', 'LDA']:
             if args.model_name == 'RF' or args.model_name == 'RandomForest':
                 model = RandomForestClassifier(random_state=args.random_seed)
             elif args.model_name == 'SVM':
                 model = SVC(kernel='rbf', probability=True, random_state=args.random_seed)
             elif args.model_name == 'LDA':
                 model = LinearDiscriminantAnalysis()
-            elif args.model_name == 'XGBoost':
-                model = XGBClassifier(random_state=args.random_seed)
             else:
                 raise ValueError(f'Unknown model: {args.model_name}')
 
@@ -149,13 +200,7 @@ def run_experiment(args):
             elif 'EfficientNet' in args.model_name:
                 model = build_efficientnet_1d(args)
 
-            if args.multi_gpu and torch.cuda.device_count() > 1:
-                print(f'Using {torch.cuda.device_count()} GPUs for training.')
-                print("DataParallel typically expects model on primary GPU (cuda:0). Moving model to cuda:0 before DataParallel.")
-                model = model.to(args.device)
-                model = nn.DataParallel(model)  # Wrap the models with DataParallel for multi-GPU support
-            else:
-                model = model.to(args.device)
+            model = model.to(args.device)
 
             class_weights = compute_class_weight('balanced', classes=np.array(list(args.label_mapping.values())), y=y_train_fold)
             class_weights = torch.tensor(class_weights, dtype=torch.float32, device=args.device)
@@ -243,19 +288,15 @@ def main():
     parser.add_argument('--epochs', type=int, default=64, help='Number of epochs')
     parser.add_argument('--device', type=str, default=None, help='Device to use')
     parser.add_argument('--num_workers', type=int, default=4, help='Number of workers for DataLoader')
-    parser.add_argument('--pretrained', action='store_true', help='Use pretrained model')
+    parser.add_argument('--align', action='store_true', help='Whether to align spectra')
+    parser.add_argument('--use_pca', action='store_true', help='Use PCA')
+    parser.add_argument('--pca_variance', type=float, default=0.95, help='The amount of variance to retain for PCA.')
     parser.add_argument('--multi_gpu', action='store_true', help='Use multiple GPUs')
     parser.add_argument('--early_stopping', action='store_true', help='Use early stopping')
     parser.add_argument('--patience', type=int, default=10, help='Early stopping patience')
     parser.add_argument('--random_seed', type=int, default=3407, help='Random seed for reproducibility')
 
     args = parser.parse_args()
-
-    if args.device is None:
-        args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    if args.multi_gpu:
-        args.device = torch.device("cuda:0")
 
     # Set save directory
     save_dir = os.path.join(args.root_dir, args.save_dir)
@@ -265,7 +306,6 @@ def main():
 
     dataset_dict = {
         'SPNS': f"datasets/SPNS/PEAK_LIST",
-        'RCC': f"datasets/RCC/Positive/PEAK_LIST",
         'CD': f"datasets/CD/PEAK_LIST"
     }
     dataset_dir = os.path.join(args.root_dir, dataset_dict[args.dataset_name])

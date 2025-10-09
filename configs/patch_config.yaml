@@ -9,6 +9,6 @@ DAPS:  # Density-Aware Peaks Selection
   patch_width: 224
   window_size: 100
   intensity_threshold: 0.1
-  density_threshold: 40
+  density_threshold: 40  # SPNS-40; CD-45
   min_peaks_in_patch: 10
   padding_value: 0.0

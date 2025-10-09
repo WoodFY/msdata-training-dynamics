@@ -8,7 +8,6 @@ import yaml
 import numpy as np
 import pandas as pd
 import argparse
-from typing import List
 from pathlib import Path
 from datetime import datetime
 from sklearn.model_selection import StratifiedKFold
@@ -62,47 +61,6 @@ def load_params_from_yaml(file_path, key=None):
         return params.get(key)
     else:
         return params
-
-
-def load_pretrained_for_finetune(model: nn.Module, pretrained_model_path: str, exclude_layers: List[str], freeze: bool = True, strict: bool = False, map_location: str = 'cpu'):
-    """
-    Load pretrained weights for finetuning a model.
-
-    :param model: The model to load weights into.
-    :param pretrained_model_path: Path to the pretrained weights file.
-    :param exclude_layers: List of layer names to exclude.
-    :param freeze: Whether to freeze the layers that are not in the exclude_layers list.
-    :param strict: Whether to strictly enforce that the keys in the state_dict match the keys returned by this module's state_dict() function.
-    :param map_location: Device to map the loaded weights to.
-    :return: Model with loaded weights.
-    """
-    if not os.path.exists(pretrained_model_path):
-        raise FileNotFoundError(f"Pretrained weights file {pretrained_model_path} does not exist.")
-
-    checkpoint = torch.load(pretrained_model_path, map_location=map_location)
-    source_state_dict = checkpoint.get('model', checkpoint.get('state_dict', checkpoint))
-    clean_source_state_dict = {(k[7:] if k.startswith('module.') else k): v for k, v in source_state_dict.items()}
-
-    filtered_state_dict = {}
-    # excluded_keys = []
-    for k, v in clean_source_state_dict.items():
-        if not any(keyword in k for keyword in exclude_layers):
-            filtered_state_dict[k] = v
-        # else:
-        #     excluded_keys.append(k)
-
-    load_msg = model.load_state_dict(filtered_state_dict, strict=strict)
-    print(load_msg)
-
-    for name, param in model.named_parameters():
-        is_excluded = any(keyword in name for keyword in exclude_layers)
-
-        if is_excluded:
-            param.requires_grad = True
-        else:
-            param.requires_grad = not freeze
-
-    return model
 
 
 def _update_file_path(file_instance: dict, prefix: str = None, new_dir: str = None, suffix: str = None) -> dict:
@@ -263,6 +221,7 @@ def run_experiment(args):
                 transform=get_augmentation_pipeline()
             ),
             batch_size=args.batch_size,
+            # num_workers=args.num_workers,
             shuffle=True,
             pin_memory=True
         )
@@ -275,6 +234,7 @@ def run_experiment(args):
                 transform=None
             ),
             batch_size=args.batch_size,
+            # num_workers=args.num_workers,
             shuffle=False,
             pin_memory=True
         )
@@ -347,8 +307,8 @@ def run_experiment(args):
     print(summary_stats_df)
 
     time_stamp = datetime.now().strftime('%Y%m%d%H%M%S')
-    fold_test_metrics_csv_path = os.path.join(exp_base_dir, f"{args.model_name}_{args.dataset_name}_num_classes_{args.num_classes}_in_channels_{args.num_patches}_kfold_tested_on_holdout_metrics_{time_stamp}.csv")
-    summary_stats_csv_path = os.path.join(exp_base_dir, f"{args.model_name}_{args.dataset_name}_num_classes_{args.num_classes}_in_channels_{args.num_patches}_kfold_tested_on_holdout_summary_stats_{time_stamp}.csv")
+    fold_test_metrics_csv_path = os.path.join(exp_base_dir, f"{args.model_name}_{args.dataset_name}_NUM_CLASSES_{args.num_classes}_IN_CHANNELS_{args.num_patches}_KFOLD_Tested_on_Holdout_Metrics_{time_stamp}.csv")
+    summary_stats_csv_path = os.path.join(exp_base_dir, f"{args.model_name}_{args.dataset_name}_NUM_CLASSES_{args.num_classes}_IN_CHANNELS_{args.num_patches}_KFOLD_Tested_on_Holdout_Summary_Stats_{time_stamp}.csv")
     fold_test_metrics_df.to_csv(fold_test_metrics_csv_path, index=False)
     summary_stats_df.to_csv(summary_stats_csv_path, index=False)
 
@@ -362,7 +322,7 @@ def main():
 
     parser.add_argument('--patch_strategy', type=str, required=True, choices=['GP', 'DAPS'], help='Strategy to generate patches')
     parser.add_argument('--score_strategy', type=str, default='Entropy', choices=['Entropy', 'Mean'], help='Strategy to calculate patch scores (e.g. Entropy: 1D image entropy, Mean: mean intensity)')
-    parser.add_argument('--num_patches', type=int, default=256, help='Number of patches to be selected')
+    parser.add_argument('--num_patches', type=int, default=64, help='Number of patches to be selected')
 
     parser.add_argument('--k_folds', type=int, default=5, help='Number of patches to be selected')
     parser.add_argument('--batch_size', type=int, default=8, help='Batch size')
@@ -375,10 +335,6 @@ def main():
     parser.add_argument('--random_seed', type=int, default=3407, help='Random seed for reproducibility')
 
     args = parser.parse_args()
-
-    if args.device is None:
-        args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {args.device}")
 
     if args.multi_gpu:
         args.device = torch.device("cuda:0")
@@ -413,7 +369,7 @@ def main():
 
     dataset_dict = {
         'SPNS': f"datasets/SPNS/",
-        'CD': f"datasets/CD/"
+        'CD': f"datasets/CD/",
     }
     dataset_dir = os.path.join(args.root_dir, dataset_dict[args.dataset_name])
     if not os.path.exists(dataset_dir):
@@ -424,9 +380,6 @@ def main():
     args.label_mapping = label_mapping
     args.num_classes = len(label_mapping)
     args.in_channels = args.num_patches
-
-    if args.pretrained:
-        args.pretrained_model_path_dict = load_params_from_yaml('../configs/pretrained_weights_config.yaml')
 
     run_experiment(args)
 

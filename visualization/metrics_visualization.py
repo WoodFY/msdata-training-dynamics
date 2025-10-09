@@ -48,6 +48,37 @@ def plot_confusion_matrix(targets, predicts, label_mapping, plot_title, save_dir
     plt.close()
 
 
+def format_plot_title(filename_part: str) -> str:
+    model_map = {
+        'RF': 'Random Forest',
+        'SVM': 'Support Vector Machine',
+        'LDA': 'Linear Discriminant Analysis'
+    }
+
+    parts = filename_part.split('_')
+
+    fold_info = ""
+    try:
+        fold_index = parts.index('FOLD')
+        fold_number = parts[fold_index + 1]
+        fold_info = f"FOLD {fold_number}"
+    except ValueError:
+        fold_info = "N/A"
+
+    model_name = "Unknown Model"
+    for part in parts:
+        if part in model_map:
+            model_name = model_map[part]
+            break
+        elif part in ['ResNet50', 'DenseNet121', 'EfficientNetB0']:
+            model_name = part
+            break
+
+    dataset_name = parts[3]
+
+    formatted_title = f"ROC Curve for {model_name}\non the {dataset_name} Dataset"
+    return formatted_title
+
 def plot_roc_auc_curve(targets, predicts, label_mapping, plot_title, save_dir):
     """
     Plot ROC curve
@@ -72,13 +103,13 @@ def plot_roc_auc_curve(targets, predicts, label_mapping, plot_title, save_dir):
     plt.plot([0, 1], [0, 1], 'k--', linewidth=0.5)
     plt.xlim([0.0, 1.0])
     plt.ylim([0.0, 1.05])
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-    plt.title(f"{plot_title.split('.')[0]} ROC Curve")
-    plt.legend(loc='lower right')
+    plt.xlabel('False Positive Rate', fontsize=20)
+    plt.ylabel('True Positive Rate', fontsize=20)
+    formatted_title = format_plot_title(plot_title.split('.')[0])
+    plt.title(formatted_title, fontsize=20, pad=10)
+    plt.legend(loc='lower right', fontsize=20)
 
     time_stamp = datetime.now().strftime('%Y%m%d%H%M%S')
-    roc_auc_file_path = os.path.join(save_dir, f"{plot_title}_roc_auc_plot_{time_stamp}.png")
-    plt.savefig(roc_auc_file_path)
-    # plt.show()
+    roc_auc_file_path = os.path.join(save_dir, f"{plot_title}_roc_auc_plot_{time_stamp}")
+    plt.savefig(f'{roc_auc_file_path}.svg', dpi=300, bbox_inches='tight')
     plt.close()
